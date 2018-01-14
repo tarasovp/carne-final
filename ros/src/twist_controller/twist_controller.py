@@ -17,7 +17,7 @@ class Controller(object):
          									self.params['max_lat_accel'], 
          									self.params['max_steer_angle'])
         self.t=None
-        self.throttle_controller = PID(0.5,0.5,0.5)
+        self.throttle_controller = PID(0.3,0.003,4)
 
     def control(self, velocity, steering, twist):
         # TODO: Change the arg, kwarg list to suit your needs
@@ -32,12 +32,18 @@ class Controller(object):
         self.t = time.time()
 
         error_v = min(twist.linear.x, 50*ONE_MPH) - velocity.linear.x
-        #error_v = max(self.decel_limit*dt, min(self.accel_limit*dt, error_v))
+        #error_v = max(self.parmas['decel_limit']*dt, min(self.accel_limit*dt, error_v))
         
         throttle = self.throttle_controller.step(error_v, dt)
         throttle = max(0.0, min(1.0, throttle))
-       
+        
+        
         brake = 0
+        if twist.linear.x<velocity.linear.x:
+        	throttle=0
+        	brake = 0.5	
+        
+        
         steer = self.yaw_controller.get_steering(twist.linear.x, twist.angular.z, velocity.linear.x)
         #steer = self.filter.filt(steer)
         return throttle, brake, steer

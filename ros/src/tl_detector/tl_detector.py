@@ -10,6 +10,7 @@ from light_classification.tl_classifier import TLClassifier
 import tf
 import cv2
 import yaml
+import math
 
 STATE_COUNT_THRESHOLD = 3
 
@@ -19,14 +20,15 @@ def dist_sq (x,y): return (x.x-y.x)**2+(x.y-y.y)**2+(x.z-y.z)**2
 class TLDetector(object):
     def __init__(self):
         rospy.init_node('tl_detector')
+        return
 
         self.pose = None
         self.waypoints = None
         self.camera_image = None
         self.lights = []
 
-        sub1 = rospy.Subscriber('/current_pose', PoseStamped, self.pose_cb)
-        sub2 = rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb)
+        sub1 = rospy.Subscriber('/current_pose', PoseStamped, self.pose_cb,queue_size=1)
+        sub2 = rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb,queue_size=1)
 
         '''
         /vehicle/traffic_lights provides you with the location of the traffic light in 3D map space and
@@ -35,8 +37,8 @@ class TLDetector(object):
         simulator. When testing on the vehicle, the color state will not be available. You'll need to
         rely on the position of the light and the camera image to predict it.
         '''
-        sub3 = rospy.Subscriber('/vehicle/traffic_lights', TrafficLightArray, self.traffic_cb)
-        sub6 = rospy.Subscriber('/image_color', Image, self.image_cb)
+        sub3 = rospy.Subscriber('/vehicle/traffic_lights', TrafficLightArray, self.traffic_cb,queue_size=1)
+        #sub6 = rospy.Subscriber('/image_color', Image, self.image_cb,queue_size=1)
 
         config_string = rospy.get_param("/traffic_light_config")
         self.config = yaml.load(config_string)
@@ -106,17 +108,17 @@ class TLDetector(object):
 
         """
         #TODO implement
-        
+        return
         
         best_d=float('inf')
         best=-1
-        
-        for wp in range(len(self.waypoints.waypoints)):
-                d = dist_sq(pose.position, self.waypoints.waypoints[wp].pose.pose.position)
-                if d<best_d:
-                    best_d = d
-                    best = wp
-        return best
+        if self.waypoints:        
+            for wp in range(len(self.waypoints.waypoints)):
+                    d = dist_sq(pose.position, self.waypoints.waypoints[wp].pose.pose.position)
+                    if d<best_d:
+                        best_d = d
+                        best = wp
+            return best
 
     def get_light_state(self, light):
         """Determines the current color of the traffic light
@@ -149,6 +151,10 @@ class TLDetector(object):
 
         """
         light = None
+        if self.lights:
+            return 0, self.lights[0].state
+        
+        
 
         # List of positions that correspond to the line to stop in front of for a given intersection
         stop_line_positions = self.config['stop_line_positions']
@@ -156,23 +162,32 @@ class TLDetector(object):
             car_position = self.get_closest_waypoint(self.pose.pose)
 
         #TODO find the closest visible traffic light (if one exists)
+        #TODO  - add only lights which are ahead!
+        
         best_d=float('inf')
         light=-1
         
-        if(self.stopline_wps):
-            for i in range(len(self.stopline_wps)):
-                d = self.stopline_wps[i] - car_position
-                if (d > 0) & (best_d > d):
+        if(self.lights):
+            for i in range(len(self.lights)):
+                #rospy.loginfo(self.lights[i])
+                d = dist_sq(self.lights[i].pose.pose.position, self.waypoints.waypoints[car_position].pose.pose.position)
+                if  (best_d > d):
                     best_d = d
                     light = i
+                    
+        best_d = math.sqrt(best_d)
+                    
+        rospy.loginfo('best ditance %.2f' % best_d)
+        rospy.loginfo('closest light %d' % light)
+        
         
         if best_d>100:
             return -1, TrafficLight.UNKNOWN
         
 
-        if light:
-            state = self.get_light_state(light)
-            return light_wp, state
+            #state = self.get_light_state(light)
+        state = self.lights[i].state
+        return i, state
             
             
 

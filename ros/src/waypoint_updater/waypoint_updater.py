@@ -3,9 +3,10 @@
 import rospy
 from geometry_msgs.msg import PoseStamped, TwistStamped
 from styx_msgs.msg import Lane, Waypoint
-
+from std_msgs.msg import Int32
 from copy import deepcopy
 import math
+import numpy as np
 
 '''
 This node will publish waypoints from the car's current position to some `x` distance ahead.
@@ -33,16 +34,26 @@ class WaypointUpdater(object):
         rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb, queue_size=1)
         rospy.Subscriber('/current_velocity', TwistStamped, self.vel_cb, queue_size=1)
         # TODO: Add a subscriber for /traffic_waypoint and /obstacle_waypoint below
-
+        rospy.Subscriber('/traffic_waypoint', Int32, self.traffic_cb,queue_size=1)
 
         self.final_waypoints_pub = rospy.Publisher('final_waypoints', Lane, queue_size=1)
-
+        
         # TODO: Add other member variables you need below
-
+        self.traffic = None
+        
         # Run the iterations at 10 Hz
         rate = rospy.Rate ( 10 )
         while not rospy.is_shutdown ():
-            self.iterate ()
+            if hasattr ( self, 'base_waypoints' ) and hasattr ( self, 'current_pose' ):
+                l = Lane ()
+                l.header.frame_id = '/world'
+                l.header.stamp = rospy.Time.now ()
+
+                now = np.argmin([(self.current_pose.pose.position.x-wp.pose.pose.position.x)**2+(self.current_pose.pose.position.y-wp.pose.pose.position.y)**2 
+                    for wp in self.base_waypoints.waypoints])
+            
+                l.waypoints = [ self.base_waypoints.waypoints[(i+now)%len(self.base_waypoints.waypoints)] for i in range(LOOKAHEAD_WPS)]
+                self.final_waypoints_pub.publish (l)
             rate.sleep ()
 
     def pose_cb(self, msg):
@@ -57,6 +68,7 @@ class WaypointUpdater(object):
 
     def traffic_cb(self, msg):
         # TODO: Callback for /traffic_waypoint message. Implement
+        rospy.loginfo('Trafic_light '+str(msg))
         pass
 
     def obstacle_cb(self, msg):
@@ -80,43 +92,16 @@ class WaypointUpdater(object):
     def vel_cb(self, msg):
         self.current_velocity = msg.twist.linear.x
 
-    def iterate(self):
-    # If the base waypoints and the current pose have been received
-        if hasattr ( self, 'base_waypoints' ) and hasattr ( self, 'current_pose' ) and hasattr(self, 'current_velocity'):
-            # Create a Standard Lane Message
-            lane = Lane ()
-            # Set its frame and Timestamp
-            lane.header.frame_id = '/world'
-            lane.header.stamp = rospy.Time.now ()
-
-            # Create local variables from messages
-            curr_pose = self.current_pose.pose.position
-
-            wp_list = self.base_waypoints.waypoints
-
-            # Create variables for nearest distance and neighbour
-            neighbour_index = None
-            # Set High value as default
-            neighbour_distance = 100000
-
-            # Find Neighbour
-            for i in range ( len ( wp_list ) ):
-                wpi = wp_list[i].pose.pose.position
-                distance = math.sqrt (
-                    (wpi.x - curr_pose.x) ** 2 + (wpi.y - curr_pose.y) ** 2 + (wpi.z - curr_pose.z) ** 2 )
-                if distance < neighbour_distance:
-                    neighbour_distance = distance
-                    neighbour_index = i
-
-            # Create a lookahead wps sized list for final waypoints
-            for i in range ( neighbour_index, neighbour_index + LOOKAHEAD_WPS ):
-                # Handle Wraparound
-                index = i % len(wp_list)
-                wpi = deepcopy(wp_list[index])
-                lane.waypoints.append(wpi)
-
-            self.final_waypoints_pub.publish ( lane )
-
+            
+    def traffic_cb(self, msg):
+        '''
+        Reads amd processes a traffic light signal
+        '''
+        rospy.loginfo(msg)
+        if (msg.data >= 0):
+            self.traffic = msg.data
+        else:
+            self.traffic = None
 
 if __name__ == '__main__':
     try:
